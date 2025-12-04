@@ -3,19 +3,17 @@ import axios from "axios";
 import "./SubmissionForm.css";
 
 const SubmissionForm = () => {
-
-  // FIXED: Accurate IST time for all devices
+  // Accurate IST Time
   const getISTDateTime = () => {
     const now = new Date();
     const istString = now.toLocaleString("en-GB", { timeZone: "Asia/Kolkata" });
-
-    // Convert "DD/MM/YYYY, HH:mm:ss" → "YYYY-MM-DDTHH:mm"
     const [datePart, timePart] = istString.split(", ");
     const [day, month, year] = datePart.split("/");
     const [hours, minutes] = timePart.split(":");
-
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   };
+
+  const API = process.env.REACT_APP_API_URL;
 
   const [form, setForm] = useState({
     name: "",
@@ -27,7 +25,10 @@ const SubmissionForm = () => {
   });
 
   const [submissions, setSubmissions] = useState([]);
+
+  // eslint-disable-next-line no-unused-vars
   const [popup, setPopup] = useState(false);
+
   const [summary, setSummary] = useState({});
 
   const names = [
@@ -42,8 +43,9 @@ const SubmissionForm = () => {
 
   const paymentModes = ["Online", "Cash"];
 
-  // Auto GPS + Load submissions
+  // GPS + Fetch Submissions
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition((pos) => {
         setForm((prev) => ({
@@ -59,45 +61,42 @@ const SubmissionForm = () => {
   // Fetch backend data
   const fetchSubmissions = async () => {
     try {
-      const res = await axios.get("http://localhost:5000/submissions");
+      const res = await axios.get(`${API}/submissions`);
       setSubmissions(res.data);
-      calculateSummary(res.data); // Auto total
+      calculateSummary(res.data);
     } catch (err) {
       console.error("Error fetching submissions", err);
     }
   };
 
-  // Auto calculate total per name
+  // Auto calculate summary
   const calculateSummary = (data) => {
     const totals = {};
-
     data.forEach((item) => {
       if (!totals[item.name]) totals[item.name] = 0;
       totals[item.name] += Number(item.amount);
     });
-
     setSummary(totals);
   };
 
-  // On change form fields
+  // Handle input fields
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  // On submit form
+  // Submit form
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     try {
-      await axios.post("http://localhost:5000/submit", form);
+      await axios.post(`${API}/submit`, form);
 
       setPopup(true);
-      setTimeout(() => setPopup(false), 2000);
+      setTimeout(() => setPopup(false), 2500);
 
       setForm({
         name: "",
-        date: getISTDateTime(), // Always fresh IST
+        date: getISTDateTime(),
         location: form.location,
         amount: "",
         paymentMode: "Online",
@@ -112,19 +111,17 @@ const SubmissionForm = () => {
 
   // Excel download
   const handleDownload = () => {
-    window.open("http://localhost:5000/download", "_blank");
+    window.open(`${API}/download`, "_blank");
   };
 
   return (
     <div className="app-wrap">
-
       {popup && <div className="popup">Form Submitted Successfully ✅</div>}
 
       <div className="card">
         <h2 className="h1">Submission Form</h2>
 
         <form onSubmit={handleSubmit} className="form-grid">
-
           <div className="field">
             <label>Name</label>
             <select name="name" value={form.name} onChange={handleChange} required>
@@ -155,7 +152,7 @@ const SubmissionForm = () => {
               onChange={handleChange}
               required
             />
-            <div className="small mt-8">If GPS prompt blocked, enter manually.</div>
+            <div className="small mt-8">If GPS blocked, enter manually.</div>
           </div>
 
           <div className="row">
@@ -199,51 +196,48 @@ const SubmissionForm = () => {
 
           <div className="field full" style={{ display: "flex", gap: 10 }}>
             <button type="submit" className="btn btn-primary">Submit</button>
-            <button type="button" onClick={handleDownload} className="btn btn-ghost">Download Excel</button>
+            <button type="button" onClick={handleDownload} className="btn btn-ghost">
+              Download Excel
+            </button>
           </div>
+
         </form>
       </div>
 
       {/* SUMMARY TABLE */}
-<div className="card">
-  <h3 className="h1">Name-wise Total Amount</h3>
-
-  <div className="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Total Amount</th>
-        </tr>
-      </thead>
-
-      <tbody>
-        {Object.keys(summary).map((name) => (
-          <tr key={name}>
-            <td>{name}</td>
-            <td>{summary[name].toFixed(2)}</td>
-          </tr>
-        ))}
-
-        {/* EXTRA TOTAL ROW */}
-        <tr style={{ fontWeight: "bold", background: "#f5f5f5" }}>
-          <td>Total</td>
-          <td>
-            {Object.values(summary)
-              .reduce((acc, val) => acc + val, 0)
-              .toFixed(2)}
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
+      <div className="card">
+        <h3 className="h1">Name-wise Total Amount</h3>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Total Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.keys(summary).map((name) => (
+                <tr key={name}>
+                  <td>{name}</td>
+                  <td>{summary[name].toFixed(2)}</td>
+                </tr>
+              ))}
+              <tr style={{ fontWeight: "bold", background: "#f5f5f5" }}>
+                <td>Total</td>
+                <td>
+                  {Object.values(summary)
+                    .reduce((acc, val) => acc + val, 0)
+                    .toFixed(2)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {/* SUBMISSIONS TABLE */}
       <div className="card">
         <h3 className="h1">Submissions</h3>
-
         <div className="table-wrap">
           <table>
             <thead>
@@ -254,6 +248,7 @@ const SubmissionForm = () => {
                 <th>Amount</th>
                 <th>Payment Mode</th>
                 <th>Description</th>
+                <th>WhatsApp</th>
               </tr>
             </thead>
 
@@ -266,6 +261,29 @@ const SubmissionForm = () => {
                   <td>{s.amount}</td>
                   <td>{s.paymentMode}</td>
                   <td>{s.description}</td>
+                  <td>
+                    <button
+                      className="btn btn-whatsapp"
+                      onClick={() => {
+                        const message = `
+Submission Details 📝
+
+Name: ${s.name}
+Amount: ₹${s.amount}
+Payment Mode: ${s.paymentMode}
+Date & Time: ${new Date(s.date).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+Location: ${s.location}
+Description: ${s.description || "N/A"}
+                        `;
+                        window.open(
+                          `https://wa.me/?text=${encodeURIComponent(message)}`,
+                          "_blank"
+                        );
+                      }}
+                    >
+                      WhatsApp
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -274,7 +292,6 @@ const SubmissionForm = () => {
         </div>
       </div>
 
-      
     </div>
   );
 };

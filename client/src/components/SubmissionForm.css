@@ -1,179 +1,185 @@
 /* Page Wrapper */
 .app-wrap {
-    max-width: 900px;
-    margin: 40px auto;
-    padding: 20px;
-    font-family: Arial, sans-serif;
-  }
-  
-  /* Card / Box */
-  .card {
-    background: #ffffff;
-    padding: 25px;
-    margin-bottom: 30px;
-    border-radius: 12px;
-    box-shadow: 0px 4px 12px rgba(0,0,0,0.1);
-  }
-  
-  .h1 {
-    text-align: center;
-    margin-bottom: 20px;
-    font-size: 22px;
-  }
-  
-  /* Form Layout */
-  .form-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-  }
-  
-  /* Fields */
-  .field {
-    display: flex;
-    flex-direction: column;
-  }
-  
-  .field.full {
-    width: 100%;
-  }
-  
-  .field label {
-    font-weight: 600;
-    margin-bottom: 8px;
-  }
-  
-  .field input,
-  .field select,
-  .field textarea {
-    padding: 12px;
-    font-size: 16px;
-    border-radius: 8px;
-    border: 1px solid #c4c4c4;
-    outline: none;
-    transition: 0.2s;
-  }
-  
-  .field input:focus,
-  .field select:focus,
-  .field textarea:focus {
-    border-color: #007bff;
-  }
-  
-  /* Row for Amount + Payment Mode */
+  max-width: 900px;
+  margin: 40px auto;
+  padding: 20px;
+  font-family: Arial, sans-serif;
+}
+
+/* Card / Box */
+.card {
+  background: #ffffff;
+  padding: 25px;
+  margin-bottom: 30px;
+  border-radius: 12px;
+  box-shadow: 0px 4px 12px rgba(0,0,0,0.1);
+}
+
+/* Title */
+.h1 {
+  text-align: center;
+  margin-bottom: 20px;
+  font-size: 22px;
+}
+
+/* Form Layout */
+.form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Fields */
+.field {
+  display: flex;
+  flex-direction: column;
+}
+
+.field.full {
+  width: 100%;
+}
+
+.field label {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.field input,
+.field select,
+.field textarea {
+  padding: 12px;
+  font-size: 16px;
+  border-radius: 8px;
+  border: 1px solid #c4c4c4;
+  outline: none;
+  transition: 0.2s;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  border-color: #007bff;
+}
+
+/* Row for Amount + Payment Mode */
+.row {
+  display: flex;
+  gap: 20px;
+}
+
+.row .field {
+  flex: 1;
+}
+
+.small {
+  font-size: 13px;
+  color: #777;
+}
+
+/* SUCCESS POPUP - SIMPLE GREEN */
+.popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: #27ae60; /* green */
+  color: white;
+  padding: 14px 30px;
+  border-radius: 10px;
+  font-size: 18px;
+  z-index: 9999;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  animation: fadePopup 0.5s ease-out;
+}
+
+@keyframes fadePopup {
+  from { opacity: 0; transform: translate(-50%, -60%); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+/* Buttons */
+.btn {
+  padding: 12px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: none;
+  font-size: 16px;
+  transition: 0.3s;
+}
+
+.btn-primary {
+  background: #007bff;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #0056b3;
+}
+
+.btn-ghost {
+  background: #f2f2f2;
+  color: black;
+}
+
+.btn-ghost:hover {
+  background: #dcdcdc;
+}
+
+.btn-whatsapp {
+  background: #25D366;
+  color: white;
+}
+
+.btn-whatsapp:hover {
+  background: #128C7E;
+}
+
+/* Table Wrap */
+.table-wrap {
+  overflow-x: auto;
+}
+
+/* Table */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+}
+
+table th,
+table td {
+  border: 1px solid #bfbfbf;
+  padding: 12px;
+  text-align: center;
+}
+
+table th {
+  background: #007bff;
+  color: white;
+  font-size: 16px;
+}
+
+table tbody tr:nth-child(even) {
+  background: #f8f8f8;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
   .row {
-    display: flex;
-    gap: 20px;
+      flex-direction: column;
   }
-  
-  .row .field {
-    flex: 1;
-  }
-  
-  .small {
-    font-size: 13px;
-    color: #777;
-  }
-  
-  .popup {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: #27ae60;
-    color: #fff;
-    padding: 14px 30px;
-    border-radius: 10px;
-    font-size: 18px;
-    z-index: 9999;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    animation: fadePopup 0.5s ease-out;
-  }
-  
-  @keyframes fadePopup {
-    from { opacity: 0; transform: translate(-50%, -60%); }
-    to { opacity: 1; transform: translate(-50%, -50%); }
-  }
-  
 
+  .app-wrap {
+      padding: 10px;
+  }
 
-  /* Buttons */
-  .btn {
-    padding: 12px 18px;
-    border-radius: 8px;
-    cursor: pointer;
-    border: none;
-    font-size: 16px;
-    transition: 0.3s;
-  }
-  
-  /* Primary Button */
-  .btn-primary {
-    background: #007bff;
-    color: white;
-  }
-  
-  .btn-primary:hover {
-    background: #0056b3;
-  }
-  
-  /* Ghost Button */
-  .btn-ghost {
-    background: #f2f2f2;
-    color: black;
-  }
-  
-  .btn-ghost:hover {
-    background: #dcdcdc;
-  }
-  
-  /* Table Wrap */
-  .table-wrap {
-    overflow-x: auto;
-  }
-  
-  /* Table */
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 15px;
-  }
-  
   table th,
   table td {
-    border: 1px solid #bfbfbf;
-    padding: 12px;
-    text-align: center;
-  }
-  
-  table th {
-    background: #007bff;
-    color: white;
-    font-size: 16px;
-  }
-  
-  table tbody tr:nth-child(even) {
-    background: #f8f8f8;
-  }
-  
-  /* Mobile Responsive */
-  @media (max-width: 768px) {
-    .row {
-      flex-direction: column;
-    }
-  
-    .app-wrap {
-      padding: 10px;
-    }
-  
-    table th,
-    table td {
       padding: 8px;
       font-size: 14px;
-    }
-  
-    .card {
-      padding: 18px;
-    }
   }
-  
+
+  .card {
+      padding: 18px;
+  }
+}
