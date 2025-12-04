@@ -9,10 +9,25 @@ dotenv.config();
 
 const app = express();
 
-// ⭐ FIXED: CORS FOR VERCEL + RENDER (Universal Allow)
+// ⭐ Allowed origins (production + local dev)
+const allowedOrigins = [
+  process.env.FRONTEND_URL, // Vercel frontend
+  "http://localhost:3000",  // Local frontend
+];
+
+// ⭐ CORS middleware
 app.use(
   cors({
-    origin: "*",
+    origin: function (origin, callback) {
+      // Allow requests with no origin (Postman, server-to-server)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.indexOf(origin) === -1) {
+        const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
+        return callback(new Error(msg), false);
+      }
+      return callback(null, true);
+    },
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"],
   })
@@ -22,15 +37,18 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 5000;
 
-// ⭐ CONNECT MONGODB
+// ⭐ Connect to MongoDB
 mongoose
-  .connect(process.env.MONGO_URI)
+  .connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
   .then(() => console.log("MongoDB connected"))
   .catch((err) => console.error("MongoDB Error:", err));
 
-// ⭐ ROUTES -----------------------------------------------------
+// ================= ROUTES =================
 
-// ➤ Save Submission
+// ➤ POST /submit
 app.post("/submit", async (req, res) => {
   try {
     const submission = new Submission(req.body);
@@ -42,7 +60,7 @@ app.post("/submit", async (req, res) => {
   }
 });
 
-// ➤ Get all submissions
+// ➤ GET /submissions
 app.get("/submissions", async (req, res) => {
   try {
     const submissions = await Submission.find().sort({ createdAt: -1 });
@@ -53,7 +71,7 @@ app.get("/submissions", async (req, res) => {
   }
 });
 
-// ➤ Download Excel
+// ➤ GET /download
 app.get("/download", async (req, res) => {
   try {
     const submissions = await Submission.find();
@@ -81,10 +99,10 @@ app.get("/download", async (req, res) => {
   }
 });
 
-// ROOT ROUTE
+// ROOT
 app.get("/", (req, res) => {
   res.send("Backend running successfully 🚀");
 });
 
-// ⭐ START SERVER
+// START SERVER
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
