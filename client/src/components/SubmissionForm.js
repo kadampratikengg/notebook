@@ -2,16 +2,13 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import "./SubmissionForm.css";
 
-const SubmissionForm = () => {
+/* global L */ // FIX: allow Leaflet global variable
 
-  // ============================
-  // GET ACCURATE IST TIME (AUTO)
-  // ============================
+const SubmissionForm = () => {
+  // GET ACCURATE IST TIME
   const getISTDateTime = () => {
     const now = new Date();
-
-    // Convert system time → IST (UTC+5:30)
-    const istOffset = 330; // minutes
+    const istOffset = 330;
     const utc = now.getTime() + now.getTimezoneOffset() * 60000;
     const istDate = new Date(utc + istOffset * 60000);
 
@@ -40,21 +37,11 @@ const SubmissionForm = () => {
   const [summary, setSummary] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const names = [
-    "Siddhesh",
-    "Omkar",
-    "Saurabh",
-    "Soham",
-    "Vaibhav",
-    "Dhanashri",
-    "Shivani"
-  ];
-
+  const names = ["Siddhesh", "Omkar", "Saurabh", "Soham", "Vaibhav", "Dhanashri", "Shivani"];
   const paymentModes = ["Online", "Cash"];
 
-  // ============================
-  // GPS + Fetch Submissions
-  // ============================
+  // FETCH GPS + SUBMISSIONS
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition((pos) => {
@@ -68,9 +55,7 @@ const SubmissionForm = () => {
     fetchSubmissions();
   }, []);
 
-  // ============================
-  // Fetch backend data
-  // ============================
+  // FETCH FROM BACKEND
   const fetchSubmissions = async () => {
     try {
       const res = await axios.get(`${API}/submissions`);
@@ -81,9 +66,7 @@ const SubmissionForm = () => {
     }
   };
 
-  // ============================
-  // Auto calculate summary
-  // ============================
+  // AUTO CALCULATE SUMMARY
   const calculateSummary = (data) => {
     const totals = {};
     data.forEach((item) => {
@@ -93,17 +76,13 @@ const SubmissionForm = () => {
     setSummary(totals);
   };
 
-  // ============================
-  // Handle input fields
-  // ============================
+  // INPUT HANDLER
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  // ============================
-  // Submit form (PREVENT MULTIPLE)
-  // ============================
+  // SUBMIT FORM
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -135,17 +114,48 @@ const SubmissionForm = () => {
     }, 3000);
   };
 
-  // ============================
-  // Excel download
-  // ============================
+  // DOWNLOAD EXCEL
   const handleDownload = () => {
     window.open(`${API}/download`, "_blank");
   };
+
+  // ===========================
+  // LOAD MAP AFTER TABLE
+  // ===========================
+  useEffect(() => {
+    if (submissions.length === 0) return;
+
+    const last = submissions[submissions.length - 1];
+    if (!last.location) return;
+
+    const [lat, lng] = last.location.split(",").map(Number);
+
+    // FIX: Clear previous map instance
+    const container = L.DomUtil.get("map");
+    if (container != null) {
+      container._leaflet_id = null;
+    }
+
+    // Create map
+    const map = L.map("map").setView([lat, lng], 15);
+
+    // FREE OpenStreetMap tiles
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+    }).addTo(map);
+
+    // Marker
+    L.marker([lat, lng]).addTo(map)
+      .bindPopup("Last Recorded Location 📍")
+      .openPopup();
+
+  }, [submissions]);
 
   return (
     <div className="app-wrap">
       {popup && <div className="popup">Form Submitted Successfully ✅</div>}
 
+      {/* FORM CARD */}
       <div className="card">
         <h2 className="h1">Payment Receipt</h2>
 
@@ -223,11 +233,7 @@ const SubmissionForm = () => {
           </div>
 
           <div className="field full" style={{ display: "flex", gap: 10 }}>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={isSubmitting}
-            >
+            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
               {isSubmitting ? "Submitting..." : "Submit"}
             </button>
 
@@ -244,10 +250,7 @@ const SubmissionForm = () => {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr>
-                <th>Name</th>
-                <th>Total Amount</th>
-              </tr>
+              <tr><th>Name</th><th>Total Amount</th></tr>
             </thead>
             <tbody>
               {Object.keys(summary).map((name) => (
@@ -259,9 +262,7 @@ const SubmissionForm = () => {
               <tr style={{ fontWeight: "bold", background: "#f5f5f5" }}>
                 <td>Total</td>
                 <td>
-                  {Object.values(summary)
-                    .reduce((acc, val) => acc + val, 0)
-                    .toFixed(2)}
+                  {Object.values(summary).reduce((a, b) => a + b, 0).toFixed(2)}
                 </td>
               </tr>
             </tbody>
@@ -309,7 +310,7 @@ Submission Details 📝
 Name: ${s.name}
 Amount: ₹${s.amount}
 Payment Mode: ${s.paymentMode}
-Date & Time: ${new Date(s.date).toLocaleString("en-IN", {
+Date: ${new Date(s.date).toLocaleString("en-IN", {
                           timeZone: "Asia/Kolkata",
                         })}
 Location: ${s.location}
@@ -329,6 +330,20 @@ Description: ${s.description || "N/A"}
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* MAP SECTION */}
+      <div className="card" style={{ marginTop: "20px" }}>
+        <h3 className="h1">Last Location Map</h3>
+        <div
+          id="map"
+          style={{
+            width: "100%",
+            height: "350px",
+            borderRadius: "10px",
+            marginTop: "10px",
+          }}
+        ></div>
       </div>
     </div>
   );
