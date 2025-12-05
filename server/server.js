@@ -12,21 +12,21 @@ const app = express();
 // ========================= CORS FIX =========================
 
 const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  "http://localhost:3000",
-  undefined,
-  null
+  "https://notebook-six-brown.vercel.app",   // your frontend
+  "http://localhost:3000"                    // local development
 ];
 
 app.use(
   cors({
     origin: function (origin, callback) {
+      if (!origin) return callback(null, true); // allow mobile/postman
+
       if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        console.log("❌ Blocked by CORS:", origin);
-        callback(null, false);
+        return callback(null, true);
       }
+
+      console.log("❌ Blocked by CORS:", origin);
+      return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST"],
@@ -50,10 +50,6 @@ mongoose
 // ➤ POST /submit
 app.post("/submit", async (req, res) => {
   try {
-    // ⛔ No timezone conversion
-    // ⛔ No -330 minutes adjustment
-    // ✅ Store exactly same time entered or auto-filled
-
     const submission = new Submission({
       ...req.body,
       date: new Date(req.body.date),
