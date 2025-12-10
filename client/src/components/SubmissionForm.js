@@ -56,6 +56,7 @@ const SubmissionForm = () => {
   const [paidTotalsState, setPaidTotalsState] = useState({});
   const [splitEnabled, setSplitEnabled] = useState(false);
   const [splitDropdownOpen, setSplitDropdownOpen] = useState(false);
+  const [expandedSplitRows, setExpandedSplitRows] = useState({});
   // list of participant names (used by splitSelected initializer)
   const names = [
     'Siddhesh',
@@ -305,7 +306,7 @@ const SubmissionForm = () => {
           </div>
 
           {/* SPLIT AMOUNT CONTROLS */}
-          <div className='field full' style={{ marginTop: 8 }}>
+          <div className='field' style={{ marginTop: 8 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input
                 type='checkbox'
@@ -317,11 +318,18 @@ const SubmissionForm = () => {
 
             {splitEnabled && (
               <div style={{ marginTop: 8 }}>
-                <div style={{ position: 'relative', display: 'inline-block' }}>
+                <div
+                  style={{
+                    position: 'relative',
+                    display: 'block',
+                    width: '100%',
+                  }}
+                >
                   <button
                     type='button'
                     className='btn btn-ghost'
                     onClick={() => setSplitDropdownOpen((s) => !s)}
+                    style={{ width: '100%', textAlign: 'left' }}
                   >
                     Split with ({selectedCount}) ▾
                   </button>
@@ -337,6 +345,9 @@ const SubmissionForm = () => {
                         marginTop: 6,
                         borderRadius: 6,
                         boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                        width: '100%',
+                        top: '100%',
+                        left: 0,
                       }}
                     >
                       {names.map((n) => (
@@ -506,8 +517,6 @@ const SubmissionForm = () => {
             </tbody>
           </table>
         </div>
-
-        
       </div>
 
       {/* SUBMISSIONS TABLE */}
@@ -521,7 +530,9 @@ const SubmissionForm = () => {
                 <th>Date & Time</th>
                 <th>Location</th>
                 <th>Amount</th>
+                <th>Split Amount</th>
                 <th>Payment Mode</th>
+                <th>Split With</th>
                 <th>Purpose</th>
                 <th>WhatsApp</th>
               </tr>
@@ -537,8 +548,66 @@ const SubmissionForm = () => {
                     })}
                   </td>
                   <td>{s.location}</td>
-                  <td>{s.amount}</td>
+                  <td>₹{s.amount}</td>
+                  <td>
+                    {s.splitShare
+                      ? `₹${s.splitShare.toFixed(2)}`
+                      : `₹${s.amount}`}
+                  </td>
                   <td>{s.paymentMode}</td>
+                  <td>
+                    {s.splitWith && s.splitWith.length > 0 ? (
+                      <div
+                        style={{
+                          position: 'relative',
+                          display: 'inline-block',
+                        }}
+                      >
+                        <button
+                          type='button'
+                          className='btn btn-ghost'
+                          onClick={() =>
+                            setExpandedSplitRows((prev) => ({
+                              ...prev,
+                              [s._id]: !prev[s._id],
+                            }))
+                          }
+                          style={{ padding: '4px 8px', fontSize: '0.9em' }}
+                        >
+                          {s.splitWith.length} people{' '}
+                          {expandedSplitRows[s._id] ? '▲' : '▼'}
+                        </button>
+                        {expandedSplitRows[s._id] && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              zIndex: 10,
+                              background: 'white',
+                              border: '1px solid #ddd',
+                              borderRadius: '4px',
+                              padding: '8px',
+                              minWidth: '150px',
+                              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                              top: '100%',
+                              left: 0,
+                              marginTop: '4px',
+                            }}
+                          >
+                            {s.splitWith.map((name) => (
+                              <div
+                                key={name}
+                                style={{ padding: '4px 0', fontSize: '0.9em' }}
+                              >
+                                {name}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span>{s.name}</span>
+                    )}
+                  </td>
                   <td>{s.description}</td>
                   <td>
                     <button
@@ -587,33 +656,33 @@ Description: ${s.description || 'N/A'}
       </div>
       <h4 className='h1' style={{ marginTop: 12 }}>
         Final Settlement
-        </h4>
-        <div className='table-wrap'>
-          <table>
-            <thead>
-              <tr>
-                <th>From</th>
-                <th>To</th>
-                <th>Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {settlements && settlements.tx && settlements.tx.length > 0 ? (
-                settlements.tx.map((t, idx) => (
-                  <tr key={idx}>
-                    <td>{t.from}</td>
-                    <td>{t.to}</td>
-                    <td>₹{t.amount.toFixed(2)}</td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={3}>All settled — no transfers required.</td>
+      </h4>
+      <div className='table-wrap'>
+        <table>
+          <thead>
+            <tr>
+              <th>From</th>
+              <th>To</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {settlements && settlements.tx && settlements.tx.length > 0 ? (
+              settlements.tx.map((t, idx) => (
+                <tr key={idx}>
+                  <td>{t.from}</td>
+                  <td>{t.to}</td>
+                  <td>₹{t.amount.toFixed(2)}</td>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={3}>All settled — no transfers required.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
