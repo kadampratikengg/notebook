@@ -1,0 +1,305 @@
+/* client/src/pages/Dashboard.css
+   Updated to right-align action buttons
+*/
+
+/* Layout root */
+.app-wrap.dashboard-root {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial;
+}
+
+/* page inner area */
+.page-inner {
+  max-width: 1140px;
+  margin: 0 auto;
+}
+
+/* Header row */
+.hdr {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+/* Left area (brand) */
+.hdr-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+
+/* Right area: takes remaining space */
+.hdr-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+/* Join wrapper: full-width & responsive */
+.join-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  max-width: 900px;
+}
+
+.join-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  font-size: 14px;
+  outline: none;
+}
+
+/* Buttons (icon-btn) */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* color variants */
+.bg-join {
+  background: #06b6d4;
+  color: #fff;
+}
+.bg-create {
+  background: #10b981;
+  color: #fff;
+}
+.bg-logout {
+  background: #ef4444;
+  color: #fff;
+}
+
+.icon-small svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Trips header */
+.trips-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+}
+.muted {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+/* Trip grid */
+.trip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+/* Trip card */
+.trip-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 140px;
+}
+
+.trip-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.trip-card-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.trip-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trip-dates {
+  font-size: 13px;
+  color: #6b7280;
+}
+.participant-count {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.joincode {
+  text-align: right;
+  min-width: 88px;
+}
+.joincode-label {
+  font-size: 11px;
+  color: #9ca3af;
+}
+.joincode-value {
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.badge {
+  background: #dc2626;
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  margin-left: 6px;
+}
+.requests-panel {
+  position: fixed;
+  right: 20px;
+  top: 90px;
+  width: 360px;
+  z-index: 40;
+}
+.request-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+.request-row .small {
+  color: #6b7280;
+}
+
+/* Description */
+.trip-desc {
+  margin-top: 10px;
+  color: #374151;
+  font-size: 14px;
+}
+
+/* Actions row: split into left + right sections
+   Right section contains View/Copy/Delete and is right-aligned.
+*/
+.card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* left placeholder (keeps space if you add small controls later) */
+.card-actions-left {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* right actions group — aligned to end */
+.card-actions-right {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* ensure button color variants */
+.icon-btn.bg-view {
+  background: #3b82f6;
+  color: #fff;
+}
+.icon-btn.bg-copy {
+  background: #8b5cf6;
+  color: #fff;
+}
+.icon-btn.bg-delete {
+  background: #ef4444;
+  color: #fff;
+}
+
+/* Empty / loading states */
+.empty-state,
+.empty-card {
+  border: 1px dashed #e5e7eb;
+  padding: 18px;
+  border-radius: 8px;
+  background: #fff;
+  color: #6b7280;
+}
+
+/* Small screens adjustments */
+@media (max-width: 640px) {
+  .page-inner {
+    padding: 0 8px;
+  }
+  .hdr {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .hdr-left {
+    justify-content: flex-start;
+  }
+  .hdr-right {
+    justify-content: stretch;
+  }
+  .join-wrapper {
+    flex-direction: row;
+    gap: 6px;
+  }
+  .icon-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+  }
+  .trip-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* On very small screens move actions to new row but keep them right aligned */
+  .card-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .card-actions-left {
+    order: 1;
+  }
+  .card-actions-right {
+    order: 2;
+    justify-content: flex-end;
+  }
+}

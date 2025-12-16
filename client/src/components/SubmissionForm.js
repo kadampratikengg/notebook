@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
+import api from '../api/api';
 import './SubmissionForm.css';
 
 /* global L */
@@ -50,7 +52,13 @@ const SubmissionForm = () => {
     setSplitSelected((prev) => ({ ...prev, [n]: !prev[n] }));
   };
 
-  const API = process.env.REACT_APP_API_URL || '';
+  // Ensure API base always points to the backend API prefix (/api). If
+  // REACT_APP_API_URL is set but doesn't include /api, append it.
+  const _envApi = (process.env.REACT_APP_API_URL || '').replace(/\/+$/g, '');
+  let API = '/api';
+  if (_envApi) {
+    API = _envApi.endsWith('/api') ? _envApi : `${_envApi}/api`;
+  }
 
   const [form, setForm] = useState({
     name: '',
@@ -70,21 +78,13 @@ const SubmissionForm = () => {
   const [splitEnabled, setSplitEnabled] = useState(false);
   const [splitDropdownOpen, setSplitDropdownOpen] = useState(false);
   const [expandedSplitRows, setExpandedSplitRows] = useState({});
-  const names = [
-    'Siddhesh',
-    'Omkar',
-    'Saurabh',
-    'Soham',
-    'Vaibhav',
-    'Dhanashri',
-    'Shivani',
-  ];
-
-  const [splitSelected, setSplitSelected] = useState(() => {
-    const map = {};
-    names.forEach((n) => (map[n] = true));
-    return map;
-  });
+  const [names, setNames] = useState([]);
+  const [splitSelected, setSplitSelected] = useState({});
+  const [mapAvailable, setMapAvailable] = useState(true);
+  const [meName, setMeName] = useState(null);
+  const params = useParams();
+  const [searchParams] = useSearchParams();
+  const tripIdParam = params.tripId || searchParams.get('tripId') || null;
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const paymentModes = ['Online', 'Cash'];
@@ -100,13 +100,53 @@ const SubmissionForm = () => {
       });
     }
 
+    if (tripIdParam) loadTripParticipants(tripIdParam);
     fetchSubmissions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripIdParam]);
+
+  async function loadTripParticipants(tid) {
+    try {
+      const res = await api.get(`/trips/${tid}`);
+      const parts = Array.isArray(res.data.participants)
+        ? res.data.participants.map((p) => p.name)
+        : [];
+      setNames(parts);
+    } catch (err) {
+      console.error('Could not load trip participants', err);
+    }
+  }
+
+  // initialize splitSelected when names change
+  useEffect(() => {
+    const map = {};
+    names.forEach((n) => (map[n] = true));
+    setSplitSelected(map);
+    // Prefer the logged-in user's name if available in participants
+    if (meName && names.includes(meName)) {
+      setForm((prev) => ({ ...prev, name: meName }));
+    } else if (!form.name && names.length > 0) {
+      setForm((prev) => ({ ...prev, name: names[0] }));
+    }
+  }, [names, meName]);
+
+  // Try to fetch current user (optional) to preselect name if present in trip
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await api.get('/auth/me');
+        if (mounted && res?.data?.user?.name) setMeName(res.data.user.name);
+      } catch (e) {
+        // ignore - not logged in
+      }
+    })();
+    return () => (mounted = false);
   }, []);
 
   const fetchSubmissions = async () => {
     try {
-      const res = await axios.get(`${API}/submissions`);
+      const query = tripIdParam ? `?tripId=${tripIdParam}` : '';
+      const res = await api.get(`/submissions${query}`);
       setSubmissions(res.data);
       calculateSummary(res.data);
     } catch (err) {
@@ -117,7 +157,10 @@ const SubmissionForm = () => {
   const calculateSummary = (data) => {
     const paidTotals = {};
     const consumedTotals = {};
-    names.forEach((n) => {
+    const namesToUse = names.length
+      ? names
+      : Array.from(new Set(data.map((d) => d.name)));
+    namesToUse.forEach((n) => {
       paidTotals[n] = 0;
       consumedTotals[n] = 0;
     });
@@ -146,7 +189,8 @@ const SubmissionForm = () => {
     setSummary(consumedTotals);
     setPaidTotalsState(paidTotals);
 
-    const netsArr = names.map((n) => ({
+    // Use the namesToUse (from trip participants or submissions) to compute nets
+    const netsArr = namesToUse.map((n) => ({
       name: n,
       net: +((paidTotals[n] || 0) - (consumedTotals[n] || 0)).toFixed(2),
     }));
@@ -176,7 +220,7 @@ const SubmissionForm = () => {
     }
 
     const totalPaid = Object.values(paidTotals).reduce((s, v) => s + v, 0);
-    const avg = totalPaid / names.length;
+    const avg = namesToUse.length > 0 ? totalPaid / namesToUse.length : 0;
     setSettlements({
       total: +totalPaid.toFixed(2),
       avg: +avg.toFixed(2),
@@ -187,8 +231,13 @@ const SubmissionForm = () => {
 
   const selectedCount =
     Object.values(splitSelected).filter(Boolean).length || 0;
+  const namesForDisplay = names.length
+    ? names
+    : Array.from(new Set(submissions.map((s) => s.name)));
   const perShare =
-    selectedCount > 0 ? +((Number(form.amount) || 0) / selectedCount).toFixed(2) : 0;
+    selectedCount > 0
+      ? +((Number(form.amount) || 0) / selectedCount).toFixed(2)
+      : 0;
 
   // Submit: treat datetime-local input as IST local time -> convert to UTC instant ISO
   const handleSubmit = async (e) => {
@@ -213,7 +262,8 @@ const SubmissionForm = () => {
 
           // Use Date.UTC to get milliseconds for the same numeric Y/M/D/H/M as if they were UTC,
           // then subtract IST offset to get the actual UTC instant corresponding to that IST local time.
-          const utcForThatIstMs = Date.UTC(y, m - 1, d, hh, mm, 0) - istOffsetMs;
+          const utcForThatIstMs =
+            Date.UTC(y, m - 1, d, hh, mm, 0) - istOffsetMs;
           payload.date = new Date(utcForThatIstMs).toISOString();
         } else {
           // fallback
@@ -222,12 +272,17 @@ const SubmissionForm = () => {
       }
 
       if (splitEnabled) {
-        payload.splitWith = Object.keys(splitSelected).filter((k) => splitSelected[k]);
+        payload.splitWith = Object.keys(splitSelected).filter(
+          (k) => splitSelected[k]
+        );
         payload.splitCount = selectedCount;
         payload.splitShare = perShare;
       }
 
-      await axios.post(`${API}/submit`, payload);
+      // If this form is for a specific trip, attach trip id so backend filters include it
+      if (tripIdParam) payload.trip = tripIdParam;
+
+      await api.post('/submit', payload);
 
       setPopup(true);
       setTimeout(() => setPopup(false), 3000);
@@ -259,98 +314,140 @@ const SubmissionForm = () => {
   // Map rendering
   useEffect(() => {
     if (submissions.length === 0) return;
-
     const last = submissions[submissions.length - 1];
     if (!last.location) return;
 
     const [lat, lng] = last.location.split(',').map(Number);
 
-    const container = L.DomUtil.get('map');
-    if (container != null) {
-      container._leaflet_id = null;
+    // If Leaflet (`L`) is not available (e.g., CDN blocked), skip map rendering
+    if (typeof L === 'undefined') {
+      // don't spam console with errors; set a flag to show a friendly message
+      setMapAvailable(false);
+      return undefined;
     }
 
-    const map = L.map('map').setView([lat, lng], 15);
+    // Create map and cleanup on unmount to avoid dangling DOM ops
+    let map;
+    try {
+      const container = L.DomUtil.get('map');
+      if (container != null) {
+        container._leaflet_id = null;
+      }
+      map = L.map('map').setView([lat, lng], 15);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-    }).addTo(map);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+      }).addTo(map);
 
-    L.marker([lat, lng])
-      .addTo(map)
-      .bindPopup('Last Recorded Location 📍')
-      .openPopup();
+      L.marker([lat, lng])
+        .addTo(map)
+        .bindPopup('Last Recorded Location 📍')
+        .openPopup();
+    } catch (e) {
+      // non-fatal: show friendly message and skip map
+      console.debug('Map render skipped (Leaflet error)', e);
+      setMapAvailable(false);
+    }
+
+    return () => {
+      try {
+        if (map) map.remove();
+      } catch (e) {
+        // ignore
+      }
+    };
   }, [submissions]);
 
   return (
-    <div className="app-wrap">
-      {popup && <div className="popup">Form Submitted Successfully ✅</div>}
+    <div className='app-wrap'>
+      {popup && <div className='popup'>Form Submitted Successfully ✅</div>}
 
       {/* FORM CARD */}
-      <div className="card">
-        <h2 className="h1">Payment Receipt</h2>
+      <div className='card'>
+        <h2 className='h1'>Payment Receipt</h2>
 
-        <form onSubmit={handleSubmit} className="form-grid">
-          <div className="field">
+        <form onSubmit={handleSubmit} className='form-grid'>
+          <div className='field'>
             <label>Name</label>
-            <select name="name" value={form.name} onChange={handleChange} required>
-              <option value="">Select name</option>
-              {names.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
+            <select
+              name='name'
+              value={form.name}
+              onChange={handleChange}
+              required
+            >
+              <option value=''>Select name</option>
+              {names.length > 0 ? (
+                names.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))
+              ) : (
+                <option value=''>(No participants)</option>
+              )}
             </select>
           </div>
 
           {/* DATE/TIME INPUT */}
-          <div className="field">
+          <div className='field'>
             <label>Date & Time (IST)</label>
             <input
-              type="datetime-local"
-              name="date"
+              type='datetime-local'
+              name='date'
               value={form.date}
               onChange={handleChange}
               required
             />
-            <div className="small mt-4">Enter the event time (will be saved as IST and displayed in IST).</div>
+            <div className='small mt-4'>
+              Enter the event time (will be saved as IST and displayed in IST).
+            </div>
           </div>
 
           {/* SPLIT UI */}
-          <div className="field mt-4">
-            <label className="split-checkbox-label">
-              <input type="checkbox" checked={splitEnabled} onChange={toggleSplit} />
-              <span className="checkbox-text">Split amount among selected</span>
+          <div className='field mt-4'>
+            <label className='split-checkbox-label'>
+              <input
+                type='checkbox'
+                checked={splitEnabled}
+                onChange={toggleSplit}
+              />
+              <span className='checkbox-text'>Split amount among selected</span>
             </label>
 
             {splitEnabled && (
-              <div className="mt-8">
-                <div className="relative">
+              <div className='mt-8'>
+                <div className='relative'>
                   <button
-                    type="button"
-                    className="btn btn-ghost dropdown-button"
+                    type='button'
+                    className='btn btn-ghost dropdown-button'
                     onClick={() => setSplitDropdownOpen((s) => !s)}
                   >
                     Split with ({selectedCount}) ▾
                   </button>
 
                   {splitDropdownOpen && (
-                    <div className="split-dropdown-menu">
-                      {names.map((n) => (
-                        <label key={n} className="split-menu-item">
-                          <input
-                            type="checkbox"
-                            checked={!!splitSelected[n]}
-                            onChange={() => toggleSelectName(n)}
-                          />
-                          <span>{n}</span>
-                        </label>
-                      ))}
+                    <div className='split-dropdown-menu'>
+                      {names.length > 0 ? (
+                        names.map((n) => (
+                          <label key={n} className='split-menu-item'>
+                            <input
+                              type='checkbox'
+                              checked={!!splitSelected[n]}
+                              onChange={() => toggleSelectName(n)}
+                            />
+                            <span>{n}</span>
+                          </label>
+                        ))
+                      ) : (
+                        <div className='small muted'>
+                          No participants to split with
+                        </div>
+                      )}
 
-                      <div className="split-menu-done">
+                      <div className='split-menu-done'>
                         <button
-                          type="button"
-                          className="btn"
+                          type='button'
+                          className='btn'
                           onClick={() => setSplitDropdownOpen(false)}
                         >
                           Done
@@ -360,43 +457,44 @@ const SubmissionForm = () => {
                   )}
                 </div>
 
-                <div className="small mt-8">
-                  Per-person share: ₹{perShare} (split across {selectedCount} people)
+                <div className='small mt-8'>
+                  Per-person share: ₹{perShare} (split across {selectedCount}{' '}
+                  people)
                 </div>
               </div>
             )}
           </div>
 
-          <div className="field full">
+          <div className='field full'>
             <label>Location (auto-detected)</label>
             <input
-              type="text"
-              name="location"
+              type='text'
+              name='location'
               value={form.location}
               onChange={handleChange}
               required
             />
-            <div className="small mt-8">If GPS blocked, enter manually.</div>
+            <div className='small mt-8'>If GPS blocked, enter manually.</div>
           </div>
 
-          <div className="row">
-            <div className="field">
+          <div className='row'>
+            <div className='field'>
               <label>Amount</label>
               <input
-                type="number"
-                name="amount"
-                min="0"
-                step="0.01"
+                type='number'
+                name='amount'
+                min='0'
+                step='0.01'
                 value={form.amount}
                 onChange={handleChange}
                 required
               />
             </div>
 
-            <div className="field">
+            <div className='field'>
               <label>Payment Mode</label>
               <select
-                name="paymentMode"
+                name='paymentMode'
                 value={form.paymentMode}
                 onChange={handleChange}
                 required
@@ -410,22 +508,30 @@ const SubmissionForm = () => {
             </div>
           </div>
 
-          <div className="field full">
+          <div className='field full'>
             <label>Purpose</label>
             <textarea
-              name="description"
-              rows="2"
+              name='description'
+              rows='2'
               value={form.description}
               onChange={handleChange}
             />
           </div>
 
-          <div className="field full submit-row">
-            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+          <div className='field full submit-row'>
+            <button
+              type='submit'
+              className='btn btn-primary'
+              disabled={isSubmitting}
+            >
               {isSubmitting ? 'Submitting...' : 'Submit'}
             </button>
 
-            <button type="button" onClick={handleDownload} className="btn btn-ghost">
+            <button
+              type='button'
+              onClick={handleDownload}
+              className='btn btn-ghost'
+            >
               Download Excel
             </button>
           </div>
@@ -433,9 +539,9 @@ const SubmissionForm = () => {
       </div>
 
       {/* SUMMARY TABLE */}
-      <div className="card">
-        <h3 className="h1">Name-wise Totals & Settlements</h3>
-        <div className="table-wrap">
+      <div className='card'>
+        <h3 className='h1'>Name-wise Totals & Settlements</h3>
+        <div className='table-wrap'>
           <table>
             <thead>
               <tr>
@@ -446,7 +552,7 @@ const SubmissionForm = () => {
               </tr>
             </thead>
             <tbody>
-              {names.map((name) => {
+              {namesForDisplay.map((name) => {
                 const paid = paidTotalsState[name] || 0;
                 const share = summary[name] || 0;
                 const net = +(paid - share).toFixed(2);
@@ -456,7 +562,9 @@ const SubmissionForm = () => {
                     <td>₹{paid.toFixed(2)}</td>
                     <td>₹{share.toFixed(2)}</td>
                     <td className={net >= 0 ? 'net-positive' : 'net-negative'}>
-                      {net >= 0 ? `+₹${net.toFixed(2)}` : `-₹${Math.abs(net).toFixed(2)}`}
+                      {net >= 0
+                        ? `+₹${net.toFixed(2)}`
+                        : `-₹${Math.abs(net).toFixed(2)}`}
                     </td>
                   </tr>
                 );
@@ -488,9 +596,9 @@ const SubmissionForm = () => {
       </div>
 
       {/* SUBMISSIONS TABLE */}
-      <div className="card">
-        <h3 className="h1">Payments</h3>
-        <div className="table-wrap">
+      <div className='card'>
+        <h3 className='h1'>Payments</h3>
+        <div className='table-wrap'>
           <table>
             <thead>
               <tr>
@@ -516,14 +624,21 @@ const SubmissionForm = () => {
 
                   <td>{s.location}</td>
                   <td>₹{s.amount}</td>
-                  <td>{s.splitShare ? `₹${s.splitShare.toFixed(2)}` : `₹${s.amount}`}</td>
+                  <td>
+                    {s.splitShare
+                      ? `₹${s.splitShare.toFixed(2)}`
+                      : `₹${s.amount}`}
+                  </td>
                   <td>{s.paymentMode}</td>
                   <td>
                     {s.splitWith?.length > 0 ? (
-                      <div className="inline-block" style={{ position: 'relative' }}>
+                      <div
+                        className='inline-block'
+                        style={{ position: 'relative' }}
+                      >
                         <button
-                          type="button"
-                          className="btn btn-ghost split-count-btn"
+                          type='button'
+                          className='btn btn-ghost split-count-btn'
                           onClick={() =>
                             setExpandedSplitRows((prev) => ({
                               ...prev,
@@ -531,10 +646,11 @@ const SubmissionForm = () => {
                             }))
                           }
                         >
-                          {s.splitWith.length} people {expandedSplitRows[s._id] ? '▲' : '▼'}
+                          {s.splitWith.length} people{' '}
+                          {expandedSplitRows[s._id] ? '▲' : '▼'}
                         </button>
                         {expandedSplitRows[s._id] && (
-                          <div className="split-expanded-popup">
+                          <div className='split-expanded-popup'>
                             {s.splitWith.map((name) => (
                               <div key={name} style={{ padding: '4px 0' }}>
                                 {name}
@@ -550,7 +666,7 @@ const SubmissionForm = () => {
                   <td>{s.description}</td>
                   <td>
                     <button
-                      className="btn btn-whatsapp"
+                      className='btn btn-whatsapp'
                       onClick={() => {
                         const message = `
 Submission Details 📝
@@ -579,14 +695,20 @@ Description: ${s.description || 'N/A'}
       </div>
 
       {/* MAP */}
-      <div className="card">
-        <h3 className="h1">Last Location Map</h3>
-        <div id="map" className="map-container"></div>
+      <div className='card'>
+        <h3 className='h1'>Last Location Map</h3>
+        {mapAvailable ? (
+          <div id='map' className='map-container'></div>
+        ) : (
+          <div className='small muted'>
+            Map unavailable (Leaflet not loaded).
+          </div>
+        )}
       </div>
 
-      <h4 className="section-title">Final Settlement</h4>
+      <h4 className='section-title'>Final Settlement</h4>
 
-      <div className="table-wrap">
+      <div className='table-wrap'>
         <table>
           <thead>
             <tr>

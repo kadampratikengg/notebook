@@ -1,3 +1,62 @@
+This repository is a small two‑tier web app (backend + CRA frontend). Keep guidance short and focused on patterns discoverable in code.
+
+## Big picture & routing
+
+- **Backend (`server/`)**: Express app. Routers are mounted under `/api` in `server/server.js` (e.g. `/api/submit`, `/api/submissions`, `/api/download`).
+- **Frontend (`client/`)**: Create‑React‑App. Shared axios helper at `client/src/api/api.js` attaches `Authorization: Bearer <token>` from `localStorage` and normalizes responses.
+
+## Key domains & where to look
+
+- **Submissions**: `server/models/Submission.js`, `server/routes/submissions.js` — POST `/submit` validates `trip` & `splitWith` against `Trip.participants`.
+- **Trips**: `server/models/Trip.js`, `server/routes/trips.js` — `joinCode` is unique; creation/deletion requires auth; `authOptional` is used for public reads.
+- **Auth**: `server/routes/auth.js`, `server/middleware/auth.js` — JWT-based; set `JWT_SECRET` in prod.
+
+## Environment & run commands
+
+- Server: set `MONGO_URI`, `JWT_SECRET`, and optionally `ALLOWED_ORIGINS` or `FRONTEND_URL` (comma-separated) for CORS. Dev: `cd server && npm run dev`.
+- Client: set `REACT_APP_API_URL` **including** `/api` (e.g. `http://localhost:5000/api`) to avoid mismatches with the code; run `cd client && npm start`.
+
+## Project-specific patterns & gotchas
+
+- **API prefix mismatch**: axios default base includes `/api`. If you override `REACT_APP_API_URL`, prefer including `/api` so `window.open(...)` download links and `api` calls line up.
+- **Submissions ↔ Trips**: submissions with `trip` require payer and split names to match trip participants — update both client and server when changing that shape.
+- **Excel export**: `server/routes/submissions.js` writes `Submissions.xlsx` to the server working dir (uses `xlsx.writeFile()`); tests/CI should clean or write to a temp path.
+- **Leaflet**: loaded via CDN in `client/public/index.html`. Components rely on a global `L` — do not add a local Leaflet package without updating the HTML/imports.
+- **Geolocation**: client may use `navigator.geolocation` to fill `location`; browser permission & HTTPS required in prod.
+
+## Auth notes for agents
+
+- Use `/api/auth/*` for register/login/me. Login returns a token which the client stores in `localStorage` and the axios instance attaches to requests.
+- `server/middleware/auth.js` returns 401 on missing/invalid tokens; many routes rely on `auth` or `authOptional` behaviors.
+
+## Debugging & conventions
+
+- Logs often include emojis (e.g. `✅`, `❌`) — helpful search tokens.
+- API errors consistently return `{ error: 'message' }` and `client/src/api/api.js` normalizes error shapes; rely on that when writing client code.
+
+## Quick example
+
+- POST `/api/submit` body example:
+
+```json
+{
+  "name": "Siddhesh",
+  "date": "2025-12-09T06:30:00.000Z",
+  "location": "18.5204,73.8567",
+  "amount": 250.0,
+  "paymentMode": "Online",
+  "description": "Payment",
+  "trip": "<tripId>",
+  "splitWith": ["Siddhesh", "Omkar"]
+}
+```
+
+## Files to inspect when changing behavior
+
+- `server/server.js`, `server/routes/*.js`, `server/models/*.js`
+- `client/src/api/api.js`, `client/src/components/SubmissionForm.js`, `client/public/index.html`
+
+If you'd like, I can add CI/test recipes, or expand a CONTRIBUTING section with run/debug notes. Any part unclear or missing? 📋
 This repository is a small two-tier web app: a Node/Express backend and a Create-React-App frontend.
 
 Keep guidance concise and focused on patterns discoverable in the codebase.
