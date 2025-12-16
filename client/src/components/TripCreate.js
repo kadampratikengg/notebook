@@ -228,13 +228,7 @@ export default function TripCreate({
             {saving ? 'Saving...' : tripId ? 'Save Changes' : 'Create Trip'}
           </button>
 
-          <button
-            type='button'
-            className='icon-btn bg-create'
-            onClick={() => (onSaved ? onSaved(null) : navigate('/'))}
-          >
-            <IconBack />
-          </button>
+         
         </div>
       </form>
 

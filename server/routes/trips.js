@@ -3,6 +3,7 @@ const express = require('express');
 const Trip = require('../models/Trip');
 const auth = require('../middleware/auth');
 const JoinRequest = require('../models/JoinRequest');
+const Submission = require('../models/Submission');
 const Activity = require('../models/Activity');
 
 const router = express.Router();
@@ -155,6 +156,18 @@ router.delete('/trips/:id', auth, async (req, res) => {
       return res.status(403).json({ error: 'Not allowed to delete this trip' });
     }
 
+    // Cascade: delete related data (submissions, join requests, activities)
+    try {
+      const delSub = await Submission.deleteMany({ trip: trip._id });
+      const delJR = await JoinRequest.deleteMany({ trip: trip._id });
+      const delAct = await Activity.deleteMany({ trip: trip._id });
+      console.log(
+        `Cascade delete for trip ${trip._id}: submissions=${delSub.deletedCount}, joinRequests=${delJR.deletedCount}, activities=${delAct.deletedCount}`
+      );
+    } catch (e) {
+      console.error('Error during cascade delete', e);
+    }
+
     await Trip.deleteOne({ _id: trip._id });
     return res.json({ ok: true });
   } catch (err) {
@@ -185,10 +198,24 @@ router.post('/trips/join/:code/request', async (req, res) => {
     if (!trip) return res.status(404).json({ error: 'Trip not found' });
 
     const user = req.user || undefined;
+    const name = user ? user.name : (req.body.name || '').trim();
+    // prevent duplicate pending requests by name for anonymous requests
+    if (!user && name) {
+      const existing = await JoinRequest.findOne({
+        trip: trip._id,
+        name: name,
+        status: 'pending',
+      });
+      if (existing)
+        return res
+          .status(400)
+          .json({ error: 'Join request already pending for this name' });
+    }
+
     const jr = new JoinRequest({
       trip: trip._id,
       user: user ? user._id : undefined,
-      name: user ? user.name : req.body.name || '',
+      name: name || '',
       message: req.body.message || '',
     });
     await jr.save();
@@ -229,11 +256,21 @@ router.post('/trips/:id/join-requests', auth, async (req, res) => {
 
     // if authenticated user, check membership
     if (user) {
+      const uname = (user.name || '').trim().toLowerCase();
       const isMember = trip.participants?.some(
-        (p) => p.name && p.name === user.name
+        (p) => (p.name || '').trim().toLowerCase() === uname
       );
       if (isMember)
         return res.status(400).json({ error: 'Already a participant' });
+
+      // prevent duplicate pending join requests by same user
+      const existing = await JoinRequest.findOne({
+        trip: trip._id,
+        user: user._id,
+        status: 'pending',
+      });
+      if (existing)
+        return res.status(400).json({ error: 'Join request already pending' });
     }
 
     const jr = new JoinRequest({

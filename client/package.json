@@ -11,6 +11,9 @@
     "react-toastify": "^11.0.5",
     "web-vitals": "^5.1.0"
   },
+  "devDependencies": {
+    "eslint-plugin-react-hooks": "^4.6.0"
+  },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build"

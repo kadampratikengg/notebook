@@ -224,6 +224,31 @@ export default function Dashboard() {
     fetchTrips();
   }, [navigate]);
 
+  // If the user has pending join requests, poll /join-requests/me so they get
+  // updated status (accepted/rejected) without manual refresh.
+  useEffect(() => {
+    if (!myRequests || myRequests.length === 0) return;
+    const hasPending = myRequests.some((m) => m.status === 'pending');
+    if (!hasPending) return;
+
+    let attempts = 0;
+    const iv = setInterval(async () => {
+      attempts += 1;
+      try {
+        const r = await api.get('/join-requests/me');
+        setMyRequests(r.data || []);
+        if (!r.data || !r.data.some((m) => m.status === 'pending')) {
+          clearInterval(iv);
+        }
+      } catch (e) {
+        // ignore transient errors
+      }
+      if (attempts >= 30) clearInterval(iv); // stop after ~4 minutes
+    }, 8000);
+
+    return () => clearInterval(iv);
+  }, [myRequests]);
+
   const handleLogout = async () => {
     try {
       await api.post('/auth/logout');
@@ -271,9 +296,15 @@ export default function Dashboard() {
           message: 'Request to join from dashboard',
         });
       } catch (e) {
-        await api.post(`/trips/join/${code}/request`, {
-          message: 'Request to join from dashboard',
-        });
+        // If unauthenticated (401), fall back to legacy public endpoint. For other
+        // errors (e.g., already a participant), surface the server message.
+        if (e?.response?.status === 401) {
+          await api.post(`/trips/join/${code}/request`, {
+            message: 'Request to join from dashboard',
+          });
+        } else {
+          throw e;
+        }
       }
 
       toast.success(
@@ -464,28 +495,55 @@ export default function Dashboard() {
                       <div className='small'>{m.message}</div>
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button
-                        className='icon-btn bg-delete'
-                        title='Cancel request'
-                        onClick={async () => {
-                          try {
-                            await api.delete(`/join-requests/${m._id}`);
-                            toast.success('Request cancelled');
-                            const r = await api.get('/join-requests/me');
-                            setMyRequests(r.data || []);
-                          } catch (err) {
-                            console.error('Cancel request error', err);
-                            toast.error(
-                              err?.response?.data?.error || 'Failed to cancel'
-                            );
-                          }
-                        }}
-                        aria-label='Cancel request'
-                      >
-                        <span className='icon-small'>
-                          <IconX stroke='#fff' />
-                        </span>
-                      </button>
+                      {m.status === 'pending' && (
+                        <button
+                          className='icon-btn bg-delete'
+                          title='Cancel request'
+                          onClick={async () => {
+                            try {
+                              await api.delete(`/join-requests/${m._id}`);
+                              toast.success('Request cancelled');
+                              const r = await api.get('/join-requests/me');
+                              setMyRequests(r.data || []);
+                            } catch (err) {
+                              console.error('Cancel request error', err);
+                              toast.error(
+                                err?.response?.data?.error || 'Failed to cancel'
+                              );
+                            }
+                          }}
+                          aria-label='Cancel request'
+                        >
+                          <span className='icon-small'>
+                            <IconX stroke='#fff' />
+                          </span>
+                        </button>
+                      )}
+
+                      {m.status === 'accepted' && m.trip && (
+                        <>
+                          <Link
+                            to={`/trip/${m.trip._id}`}
+                            className='icon-btn bg-view'
+                            title='View trip'
+                            aria-label='View trip'
+                          >
+                            <span className='icon-small'>
+                              <IconEye stroke='#fff' />
+                            </span>
+                          </Link>
+                          <Link
+                            to={`/submit?tripId=${m.trip._id}`}
+                            className='icon-btn bg-create'
+                            title='Add payment'
+                            aria-label='Add payment'
+                          >
+                            <span className='icon-small'>
+                              <IconPlus stroke='#fff' />
+                            </span>
+                          </Link>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}

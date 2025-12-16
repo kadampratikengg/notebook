@@ -4,26 +4,17 @@ import axios from 'axios';
 import api from '../api/api';
 import './SubmissionForm.css';
 
-/* global L */
-
 const SubmissionForm = () => {
-  // Return a "datetime-local" compatible string in user's browser local timezone
+  // Helper: return a datetime-local string for the current local time
   const getLocalDateTime = () => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
+    const d = new Date();
+    const tzoffset = d.getTimezoneOffset() * 60000; // offset in ms
+    return new Date(d - tzoffset).toISOString().slice(0, 16);
   };
 
-  // Format any Date or ISO string to "10 Dec 2025, 03:30 PM" in IST (Asia/Kolkata)
+  // Helper: format a date into IST in the form "10 Dec 2025, 03:30 PM"
   const formatToIST = (dateInput) => {
-    if (!dateInput) return '—';
-    const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-    if (Number.isNaN(d.getTime())) return '—';
-
+    const d = new Date(dateInput);
     const parts = d.toLocaleString('en-GB', {
       timeZone: 'Asia/Kolkata',
       day: '2-digit',
@@ -34,7 +25,7 @@ const SubmissionForm = () => {
       hour12: true,
     });
 
-    // Normalize spacing and commas to ensure stable format "10 Dec 2025, 03:30 PM"
+    // Normalize spacing and commas to ensure stable format
     return parts.replace(/\s+/g, ' ').replace(' ,', ',').trim();
   };
 
@@ -73,15 +64,30 @@ const SubmissionForm = () => {
   const [submissions, setSubmissions] = useState([]);
   const [popup, setPopup] = useState(false);
   const [summary, setSummary] = useState({});
-  const [settlements, setSettlements] = useState([]);
+  const [settlements, setSettlements] = useState({
+    total: 0,
+    avg: 0,
+    nets: [],
+    tx: [],
+  });
   const [paidTotalsState, setPaidTotalsState] = useState({});
   const [splitEnabled, setSplitEnabled] = useState(false);
   const [splitDropdownOpen, setSplitDropdownOpen] = useState(false);
   const [expandedSplitRows, setExpandedSplitRows] = useState({});
   const [names, setNames] = useState([]);
+  const [trip, setTrip] = useState(null);
   const [splitSelected, setSplitSelected] = useState({});
   const [mapAvailable, setMapAvailable] = useState(true);
-  const [meName, setMeName] = useState(null);
+  const [meUser, setMeUser] = useState(null);
+  const [canSubmit, setCanSubmit] = useState(true);
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({
+    amount: '',
+    description: '',
+    date: '',
+    location: '',
+  });
+  const WA_BASE = process.env.REACT_APP_WA_BASE || 'https://wa.me/?text=';
   const params = useParams();
   const [searchParams] = useSearchParams();
   const tripIdParam = params.tripId || searchParams.get('tripId') || null;
@@ -111,6 +117,7 @@ const SubmissionForm = () => {
         ? res.data.participants.map((p) => p.name)
         : [];
       setNames(parts);
+      setTrip(res.data);
     } catch (err) {
       console.error('Could not load trip participants', err);
     }
@@ -122,12 +129,13 @@ const SubmissionForm = () => {
     names.forEach((n) => (map[n] = true));
     setSplitSelected(map);
     // Prefer the logged-in user's name if available in participants
-    if (meName && names.includes(meName)) {
-      setForm((prev) => ({ ...prev, name: meName }));
+    const meNameLocal = meUser?.name;
+    if (meNameLocal && names.includes(meNameLocal)) {
+      setForm((prev) => ({ ...prev, name: meNameLocal }));
     } else if (!form.name && names.length > 0) {
       setForm((prev) => ({ ...prev, name: names[0] }));
     }
-  }, [names, meName]);
+  }, [names, meUser]);
 
   // Try to fetch current user (optional) to preselect name if present in trip
   useEffect(() => {
@@ -135,13 +143,69 @@ const SubmissionForm = () => {
     (async () => {
       try {
         const res = await api.get('/auth/me');
-        if (mounted && res?.data?.user?.name) setMeName(res.data.user.name);
+        if (mounted && res?.data?.user) setMeUser(res.data.user);
       } catch (e) {
         // ignore - not logged in
       }
     })();
     return () => (mounted = false);
   }, []);
+
+  // compute whether current user can submit for this trip
+  useEffect(() => {
+    if (!trip || !trip._id) {
+      setCanSubmit(true);
+      return;
+    }
+    if (!meUser) {
+      // if not logged in, disallow trip-scoped submissions (server enforces auth)
+      setCanSubmit(false);
+      return;
+    }
+    const isOwner = trip.owner && String(trip.owner) === String(meUser._id);
+    const isParticipant = names.includes(meUser.name);
+    setCanSubmit(isOwner || isParticipant);
+  }, [trip, meUser, names]);
+
+  // If user is not yet allowed to submit for this trip (waiting for owner approval),
+  // poll the trip endpoint periodically so that the UI updates when the owner accepts.
+  useEffect(() => {
+    if (!trip || !meUser || canSubmit) return;
+    let stopped = false;
+    let attempts = 0;
+    const iv = setInterval(async () => {
+      attempts += 1;
+      try {
+        const res = await api.get(`/trips/${trip._id}`);
+        const updated = res.data;
+        if (!updated) return;
+        const parts = Array.isArray(updated.participants)
+          ? updated.participants.map((p) => p.name)
+          : [];
+        setNames(parts);
+        const meNameLocal = meUser?.name;
+        const isMember =
+          meNameLocal &&
+          parts.some(
+            (n) => n.trim().toLowerCase() === meNameLocal.trim().toLowerCase()
+          );
+        if (
+          isMember ||
+          (updated.owner && String(updated.owner) === String(meUser._id))
+        ) {
+          setCanSubmit(true);
+          stopped = true;
+          clearInterval(iv);
+        }
+      } catch (e) {
+        // ignore transient errors
+      }
+      if (attempts >= 10 && !stopped) {
+        clearInterval(iv);
+      }
+    }, 8000);
+    return () => clearInterval(iv);
+  }, [trip, meUser, canSubmit]);
 
   const fetchSubmissions = async () => {
     try {
@@ -228,6 +292,14 @@ const SubmissionForm = () => {
       tx,
     });
   };
+
+  // If the participants (`names`) are loaded after submissions, recalc summary
+  // so final settlement uses the correct participant list (namesToUse).
+  useEffect(() => {
+    // Recalculate summary whenever trip participants change
+    calculateSummary(submissions || []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [names]);
 
   const selectedCount =
     Object.values(splitSelected).filter(Boolean).length || 0;
@@ -366,176 +438,211 @@ const SubmissionForm = () => {
       <div className='card'>
         <h2 className='h1'>Payment Receipt</h2>
 
-        <form onSubmit={handleSubmit} className='form-grid'>
-          <div className='field'>
-            <label>Name</label>
-            <select
-              name='name'
-              value={form.name}
-              onChange={handleChange}
-              required
-            >
-              <option value=''>Select name</option>
-              {names.length > 0 ? (
-                names.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))
-              ) : (
-                <option value=''>(No participants)</option>
-              )}
-            </select>
-          </div>
-
-          {/* DATE/TIME INPUT */}
-          <div className='field'>
-            <label>Date & Time (IST)</label>
-            <input
-              type='datetime-local'
-              name='date'
-              value={form.date}
-              onChange={handleChange}
-              required
-            />
-            <div className='small mt-4'>
-              Enter the event time (will be saved as IST and displayed in IST).
-            </div>
-          </div>
-
-          {/* SPLIT UI */}
-          <div className='field mt-4'>
-            <label className='split-checkbox-label'>
-              <input
-                type='checkbox'
-                checked={splitEnabled}
-                onChange={toggleSplit}
-              />
-              <span className='checkbox-text'>Split amount among selected</span>
-            </label>
-
-            {splitEnabled && (
-              <div className='mt-8'>
-                <div className='relative'>
-                  <button
-                    type='button'
-                    className='btn btn-ghost dropdown-button'
-                    onClick={() => setSplitDropdownOpen((s) => !s)}
-                  >
-                    Split with ({selectedCount}) ▾
-                  </button>
-
-                  {splitDropdownOpen && (
-                    <div className='split-dropdown-menu'>
-                      {names.length > 0 ? (
-                        names.map((n) => (
-                          <label key={n} className='split-menu-item'>
-                            <input
-                              type='checkbox'
-                              checked={!!splitSelected[n]}
-                              onChange={() => toggleSelectName(n)}
-                            />
-                            <span>{n}</span>
-                          </label>
-                        ))
-                      ) : (
-                        <div className='small muted'>
-                          No participants to split with
-                        </div>
-                      )}
-
-                      <div className='split-menu-done'>
-                        <button
-                          type='button'
-                          className='btn'
-                          onClick={() => setSplitDropdownOpen(false)}
-                        >
-                          Done
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className='small mt-8'>
-                  Per-person share: ₹{perShare} (split across {selectedCount}{' '}
-                  people)
-                </div>
+        {tripIdParam && !canSubmit ? (
+          <div className='muted'>
+            You don't have permission to submit payments for this trip. If you
+            believe this is an error, ask the trip owner to approve your join
+            request.
+            {meUser ? (
+              <div style={{ marginTop: 8 }}>
+                <button
+                  className='btn btn-primary'
+                  onClick={async () => {
+                    try {
+                      await api.post(`/trips/${trip._id}/join-requests`, {
+                        message: 'Requesting to join the trip',
+                      });
+                      alert('Join request sent to the trip owner');
+                    } catch (e) {
+                      console.error(e);
+                      alert('Error sending join request');
+                    }
+                  }}
+                >
+                  Request to Join
+                </button>
+              </div>
+            ) : (
+              <div style={{ marginTop: 8 }}>
+                Please log in to request to join this trip.
               </div>
             )}
           </div>
-
-          <div className='field full'>
-            <label>Location (auto-detected)</label>
-            <input
-              type='text'
-              name='location'
-              value={form.location}
-              onChange={handleChange}
-              required
-            />
-            <div className='small mt-8'>If GPS blocked, enter manually.</div>
-          </div>
-
-          <div className='row'>
+        ) : (
+          <form onSubmit={handleSubmit} className='form-grid'>
             <div className='field'>
-              <label>Amount</label>
-              <input
-                type='number'
-                name='amount'
-                min='0'
-                step='0.01'
-                value={form.amount}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
-            <div className='field'>
-              <label>Payment Mode</label>
+              <label>Name</label>
               <select
-                name='paymentMode'
-                value={form.paymentMode}
+                name='name'
+                value={form.name}
                 onChange={handleChange}
                 required
               >
-                {paymentModes.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
+                <option value=''>Select name</option>
+                {names.length > 0 ? (
+                  names.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))
+                ) : (
+                  <option value=''>(No participants)</option>
+                )}
               </select>
             </div>
-          </div>
 
-          <div className='field full'>
-            <label>Purpose</label>
-            <textarea
-              name='description'
-              rows='2'
-              value={form.description}
-              onChange={handleChange}
-            />
-          </div>
+            {/* DATE/TIME INPUT */}
+            <div className='field'>
+              <label>Date & Time (IST)</label>
+              <input
+                type='datetime-local'
+                name='date'
+                value={form.date}
+                onChange={handleChange}
+                required
+              />
+              <div className='small mt-4'>
+                Enter the event time (will be saved as IST and displayed in
+                IST).
+              </div>
+            </div>
 
-          <div className='field full submit-row'>
-            <button
-              type='submit'
-              className='btn btn-primary'
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? 'Submitting...' : 'Submit'}
-            </button>
+            {/* SPLIT UI */}
+            <div className='field mt-4'>
+              <label className='split-checkbox-label'>
+                <input
+                  type='checkbox'
+                  checked={splitEnabled}
+                  onChange={toggleSplit}
+                />
+                <span className='checkbox-text'>
+                  Split amount among selected
+                </span>
+              </label>
 
-            <button
-              type='button'
-              onClick={handleDownload}
-              className='btn btn-ghost'
-            >
-              Download Excel
-            </button>
-          </div>
-        </form>
+              {splitEnabled && (
+                <div className='mt-8'>
+                  <div className='relative'>
+                    <button
+                      type='button'
+                      className='btn btn-ghost dropdown-button'
+                      onClick={() => setSplitDropdownOpen((s) => !s)}
+                    >
+                      Split with ({selectedCount}) ▾
+                    </button>
+
+                    {splitDropdownOpen && (
+                      <div className='split-dropdown-menu'>
+                        {names.length > 0 ? (
+                          names.map((n) => (
+                            <label key={n} className='split-menu-item'>
+                              <input
+                                type='checkbox'
+                                checked={!!splitSelected[n]}
+                                onChange={() => toggleSelectName(n)}
+                              />
+                              <span>{n}</span>
+                            </label>
+                          ))
+                        ) : (
+                          <div className='small muted'>
+                            No participants to split with
+                          </div>
+                        )}
+
+                        <div className='split-menu-done'>
+                          <button
+                            type='button'
+                            className='btn'
+                            onClick={() => setSplitDropdownOpen(false)}
+                          >
+                            Done
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className='small mt-8'>
+                    Per-person share: ₹{perShare} (split across {selectedCount}{' '}
+                    people)
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className='field full'>
+              <label>Location (auto-detected)</label>
+              <input
+                type='text'
+                name='location'
+                value={form.location}
+                onChange={handleChange}
+                required
+              />
+              <div className='small mt-8'>If GPS blocked, enter manually.</div>
+            </div>
+
+            <div className='row'>
+              <div className='field'>
+                <label>Amount</label>
+                <input
+                  type='number'
+                  name='amount'
+                  min='0'
+                  step='0.01'
+                  value={form.amount}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+
+              <div className='field'>
+                <label>Payment Mode</label>
+                <select
+                  name='paymentMode'
+                  value={form.paymentMode}
+                  onChange={handleChange}
+                  required
+                >
+                  {paymentModes.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className='field full'>
+              <label>Purpose</label>
+              <textarea
+                name='description'
+                rows='2'
+                value={form.description}
+                onChange={handleChange}
+              />
+            </div>
+
+            <div className='field full submit-row'>
+              <button
+                type='submit'
+                className='btn btn-primary'
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? 'Submitting...' : 'Submit'}
+              </button>
+
+              <button
+                type='button'
+                onClick={handleDownload}
+                className='btn btn-ghost'
+              >
+                Download Excel
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* SUMMARY TABLE */}
@@ -617,76 +724,252 @@ const SubmissionForm = () => {
             <tbody>
               {submissions.map((s) => (
                 <tr key={s._id}>
-                  <td>{s.name}</td>
-
-                  {/* show stored date in IST with "10 Dec 2025, 03:30 PM" */}
-                  <td>{s.date ? formatToIST(s.date) : '—'}</td>
-
-                  <td>{s.location}</td>
-                  <td>₹{s.amount}</td>
-                  <td>
-                    {s.splitShare
-                      ? `₹${s.splitShare.toFixed(2)}`
-                      : `₹${s.amount}`}
-                  </td>
-                  <td>{s.paymentMode}</td>
-                  <td>
-                    {s.splitWith?.length > 0 ? (
-                      <div
-                        className='inline-block'
-                        style={{ position: 'relative' }}
-                      >
-                        <button
-                          type='button'
-                          className='btn btn-ghost split-count-btn'
-                          onClick={() =>
-                            setExpandedSplitRows((prev) => ({
-                              ...prev,
-                              [s._id]: !prev[s._id],
+                  {editingId === s._id ? (
+                    <>
+                      <td>{s.name}</td>
+                      <td>
+                        <input
+                          type='datetime-local'
+                          value={editForm.date}
+                          onChange={(e) =>
+                            setEditForm((p) => ({ ...p, date: e.target.value }))
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={editForm.location}
+                          onChange={(e) =>
+                            setEditForm((p) => ({
+                              ...p,
+                              location: e.target.value,
                             }))
                           }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={editForm.amount}
+                          onChange={(e) =>
+                            setEditForm((p) => ({
+                              ...p,
+                              amount: e.target.value,
+                            }))
+                          }
+                        />
+                      </td>
+                      <td>
+                        {s.splitShare
+                          ? `₹${s.splitShare.toFixed(2)}`
+                          : `₹${s.amount}`}
+                      </td>
+                      <td>{s.paymentMode}</td>
+                      <td>
+                        {s.splitWith?.length > 0
+                          ? `${s.splitWith.length} people`
+                          : s.name}
+                      </td>
+                      <td>
+                        <input
+                          value={editForm.description}
+                          onChange={(e) =>
+                            setEditForm((p) => ({
+                              ...p,
+                              description: e.target.value,
+                            }))
+                          }
+                        />
+                      </td>
+                      <td>
+                        <button
+                          type='button'
+                          className='btn btn-primary'
+                          title='Save'
+                          aria-label='Save'
+                          onClick={async () => {
+                            try {
+                              // convert editForm.date (datetime-local) to ISO (IST aware)
+                              const payload = { ...editForm };
+                              if (payload.date) {
+                                // if includes 'T' assume local datetime-local and convert to UTC ISO
+                                const [datePart, timePart] =
+                                  payload.date.split('T');
+                                if (datePart && timePart) {
+                                  const [y, m, d] = datePart
+                                    .split('-')
+                                    .map(Number);
+                                  const [hh, mm] = timePart
+                                    .split(':')
+                                    .map(Number);
+                                  const istOffsetMs = 5.5 * 60 * 60 * 1000;
+                                  const utcForThatIstMs =
+                                    Date.UTC(y, m - 1, d, hh, mm, 0) -
+                                    istOffsetMs;
+                                  payload.date = new Date(
+                                    utcForThatIstMs
+                                  ).toISOString();
+                                }
+                              }
+                              await api.put(`/submissions/${s._id}`, payload);
+                              setEditingId(null);
+                              fetchSubmissions();
+                              alert('Submission updated');
+                            } catch (e) {
+                              console.error(e);
+                              const status = e?.response?.status;
+                              const msg =
+                                e?.response?.data?.error ||
+                                e.message ||
+                                'Error updating submission';
+                              if (status === 404) {
+                                alert(
+                                  'Submission not found (it may have been deleted).'
+                                );
+                                setEditingId(null);
+                                fetchSubmissions();
+                                return;
+                              }
+                              if (
+                                status === 400 &&
+                                msg.toLowerCase().includes('parent trip')
+                              ) {
+                                alert(
+                                  'Trip for this submission no longer exists. The submission cannot be edited.'
+                                );
+                                setEditingId(null);
+                                fetchSubmissions();
+                                return;
+                              }
+                              alert(msg);
+                            }
+                          }}
                         >
-                          {s.splitWith.length} people{' '}
-                          {expandedSplitRows[s._id] ? '▲' : '▼'}
+                          💾
                         </button>
-                        {expandedSplitRows[s._id] && (
-                          <div className='split-expanded-popup'>
-                            {s.splitWith.map((name) => (
-                              <div key={name} style={{ padding: '4px 0' }}>
-                                {name}
+                        <button
+                          type='button'
+                          className='btn btn-ghost'
+                          title='Cancel'
+                          aria-label='Cancel'
+                          onClick={() => setEditingId(null)}
+                        >
+                          ✖
+                        </button>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td>{s.name}</td>
+                      {/* show stored date in IST with "10 Dec 2025, 03:30 PM" */}
+                      <td>{s.date ? formatToIST(s.date) : '—'}</td>
+                      <td>{s.location}</td>
+                      <td>₹{s.amount}</td>
+                      <td>
+                        {s.splitShare
+                          ? `₹${s.splitShare.toFixed(2)}`
+                          : `₹${s.amount}`}
+                      </td>
+                      <td>{s.paymentMode}</td>
+                      <td>
+                        {s.splitWith?.length > 0 ? (
+                          <div
+                            className='inline-block'
+                            style={{ position: 'relative' }}
+                          >
+                            <button
+                              type='button'
+                              className='btn btn-ghost split-count-btn'
+                              onClick={() =>
+                                setExpandedSplitRows((prev) => ({
+                                  ...prev,
+                                  [s._id]: !prev[s._id],
+                                }))
+                              }
+                            >
+                              {s.splitWith.length} people{' '}
+                              {expandedSplitRows[s._id] ? '▲' : '▼'}
+                            </button>
+                            {expandedSplitRows[s._id] && (
+                              <div className='split-expanded-popup'>
+                                {s.splitWith.map((name) => (
+                                  <div key={name} style={{ padding: '4px 0' }}>
+                                    {name}
+                                  </div>
+                                ))}
                               </div>
-                            ))}
+                            )}
                           </div>
+                        ) : (
+                          <span>{s.name}</span>
                         )}
-                      </div>
-                    ) : (
-                      <span>{s.name}</span>
-                    )}
-                  </td>
-                  <td>{s.description}</td>
-                  <td>
-                    <button
-                      className='btn btn-whatsapp'
-                      onClick={() => {
-                        const message = `
-Submission Details 📝
+                      </td>
+                      <td>{s.description}</td>
+                      <td>
+                        <button
+                          className='btn btn-whatsapp'
+                          title='Share on WhatsApp'
+                          aria-label='Share on WhatsApp'
+                          onClick={() => {
+                            // If location looks like lat,lng, convert to Google Maps link
+                            let locationLine = s.location || 'N/A';
+                            if (s.location) {
+                              const m = s.location
+                                .trim()
+                                .match(
+                                  /(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/
+                                );
+                              if (m) {
+                                const lat = m[1];
+                                const lng = m[2];
+                                const mapsLink = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+                                locationLine = `${lat}, ${lng} (${mapsLink})`;
+                              }
+                            }
 
-Name: ${s.name}
-Amount: ₹${s.amount}
-Payment Mode: ${s.paymentMode}
-Date: ${s.date ? formatToIST(s.date) : '—'}
-Location: ${s.location}
-Description: ${s.description || 'N/A'}
-                        `;
-                        window.open(
-                          `https://wa.me/?text=${encodeURIComponent(message)}`,
-                          '_blank'
-                        );
-                      }}
-                    >
-                      WhatsApp
-                    </button>
-                  </td>
+                            const message = `\nSubmission Details 📝\n\nName: ${
+                              s.name
+                            }\nAmount: ₹${s.amount}\nPayment Mode: ${
+                              s.paymentMode
+                            }\nDate: ${
+                              s.date ? formatToIST(s.date) : '—'
+                            }\nLocation: ${locationLine}\nDescription: ${
+                              s.description || 'N/A'
+                            }`;
+                            window.open(
+                              `${WA_BASE}${encodeURIComponent(message)}`,
+                              '_blank'
+                            );
+                          }}
+                        >
+                          🟢
+                        </button>
+                        {meUser &&
+                          trip &&
+                          String(trip.owner) === String(meUser._id) && (
+                            <button
+                              className='btn btn-ghost'
+                              title='Edit'
+                              aria-label='Edit'
+                              onClick={() => {
+                                setEditingId(s._id);
+                                setEditForm({
+                                  amount: s.amount,
+                                  description: s.description || '',
+                                  date: s.date
+                                    ? new Date(s.date)
+                                        .toISOString()
+                                        .slice(0, 16)
+                                    : '',
+                                  location: s.location || '',
+                                });
+                              }}
+                            >
+                              ✎
+                            </button>
+                          )}
+                      </td>
+                    </>
+                  )}
                 </tr>
               ))}
             </tbody>
